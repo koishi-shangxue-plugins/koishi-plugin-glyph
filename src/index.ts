@@ -39,24 +39,12 @@ const SUPPORTED_FORMATS = [
   '.pfb',    // PostScript Type 1 Font (Binary)
 ] as const;
 
-// 字体信息结构
-interface FontListItem {
-  name: string;
-  format: string;
-  size: string;
-}
-
-// 读取字体列表
-function loadFontList(): { options: Schema<string, string>[]; description: string; } {
+// 获取字体名称列表(用于动态 Schema)
+function getFontNames(): string[] {
   try {
     const fontRoot = resolve(process.cwd(), 'data/fonts');
     const files = readdirSync(fontRoot);
-
-    // 添加默认字体选项（始终在第一位）
-    const fontOptions: Schema<string, string>[] = [
-      Schema.const('default').description('default (不使用自定义字体)')
-    ];
-    const fontItems: FontListItem[] = [];
+    const fontNames: string[] = [];
 
     for (const file of files) {
       const ext = extname(file).toLowerCase();
@@ -76,49 +64,15 @@ function loadFontList(): { options: Schema<string, string>[]; description: strin
 
       // 获取字体名称（不含扩展名）
       const fontName = basename(file, ext);
-
-      // 跳过 default 字体（已在前面添加）
-      if (fontName === 'default') {
-        continue;
-      }
-
-      const format = ext.slice(1);
-      const sizeKB = (fileStats.size / 1024).toFixed(2);
-
-      fontOptions.push(
-        Schema.const(fontName).description(`${fontName} (${format}, ${sizeKB} KB)`)
-      );
-
-      fontItems.push({ name: fontName, format, size: sizeKB });
+      fontNames.push(fontName);
     }
 
-    // 生成字体列表描述
-    let description = '<br><br>**当前可用字体列表：**<br>- default (不使用自定义字体)<br>';
-    if (fontItems.length === 0) {
-      description += '<br>**暂无其他字体**<br>请将字体文件放入 data/fonts 目录';
-    } else {
-      for (const item of fontItems) {
-        description += `- ${item.name}<br>`;
-      }
-    }
-
-    return { options: fontOptions, description };
+    return fontNames;
   } catch (err) {
-    // 如果读取失败（例如目录不存在），返回默认选项
-    return {
-      options: [Schema.const('default').description('default (不使用自定义字体)')],
-      description: '<br><br>**当前可用字体列表：**<br>- default (不使用自定义字体)<br><br>**暂无其他字体**<br>请将字体文件放入 data/fonts 目录'
-    };
+    // 如果读取失败（例如目录不存在），返回空数组
+    return [];
   }
 }
-
-// 在模块加载时生成字体列表
-const fontListData = loadFontList();
-const fontSchemaOptions = fontListData.options;
-const fontListDescription = fontListData.description;
-
-// 导出字体选项供其他插件使用
-export { fontSchemaOptions as fontlist };
 
 // 字体信息接口
 interface FontInfo {
@@ -154,23 +108,12 @@ export class FontsService extends Service {
       this.ctx.logger.warn(`创建字体目录失败: ${this.fontRoot}`, err);
     }
 
-    // 创建默认字体文件（空文件）
-    const defaultFontPath = resolve(this.fontRoot, 'default.ttf');
-    try {
-      await access(defaultFontPath);
-      // 文件已存在，不需要创建
-    } catch {
-      // 文件不存在，创建空文件
-      try {
-        await writeFile(defaultFontPath, Buffer.alloc(0));
-        this.ctx.logger.debug(`已创建默认字体文件: default.ttf`);
-      } catch (err) {
-        this.ctx.logger.warn(`创建默认字体文件失败`, err);
-      }
-    }
-
     // 加载字体文件
     await this.loadFonts();
+
+    // 注册动态 Schema,供其他插件使用
+    // 传入函数而不是直接的值,这样可以动态获取字体列表
+    this.ctx.schema.set('glyph.fonts', Schema.union(getFontNames()));
 
     this.ctx.logger.info(`已加载 ${this.fontMap.size} 个字体文件`);
   }
@@ -203,16 +146,10 @@ export class FontsService extends Service {
           // 读取字体文件
           const buffer = await readFile(filePath);
 
-          // 如果是 default 字体且文件为空，使用空字符串作为 dataUrl
-          let dataUrl: string;
-          if (fontName === 'default' && buffer.length === 0) {
-            dataUrl = '';
-          } else {
-            // 转换为 Base64 Data URL
-            const base64 = buffer.toString('base64');
-            const mimeType = this.getMimeType(ext);
-            dataUrl = `data:${mimeType};base64,${base64}`;
-          }
+          // 转换为 Base64 Data URL
+          const base64 = buffer.toString('base64');
+          const mimeType = this.getMimeType(ext);
+          const dataUrl = `data:${mimeType};base64,${base64}`;
 
           // 存储字体信息
           const fontInfo: FontInfo = {
@@ -406,8 +343,8 @@ export namespace FontsService {
       .default('data/fonts')
       .description('存放字体文件的目录路径'),
 
-    fontPreview: Schema.union([]).role('radio')
-      .description(`字体列表展示<br>**新添加的字体需要重启koishi生效**<br>> 用于预览所有可用字体，无实际功能${fontListDescription}`)
+    fontPreview: Schema.dynamic('glyph.fonts').role('radio')
+      .description(`字体列表展示<br>**新添加的字体需要重启koishi生效**<br>> 用于预览所有可用字体，无实际功能`)
   });
 }
 

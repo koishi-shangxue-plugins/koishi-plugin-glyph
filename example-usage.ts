@@ -2,83 +2,76 @@
  * 这是一个示例文件，展示其他插件如何使用 koishi-plugin-glyph
  *
  * 使用方法：
- * 1. 在你的插件中安装 koishi-plugin-glyph
- * 2. 导入 fontlist 并在 Schema 中使用
- * 3. 必须注入 glyph 服务才能获取字体 Data URL
+ * 1. 将 koishi-plugin-glyph 添加到 devDependencies (仅用于获取类型)
+ * 2. 使用 Schema.dynamic('glyph.fonts') 引用字体列表
+ * 3. 使用 inject 声明 glyph 服务
  * 4. 通过 ctx.glyph.getFontDataUrl(config.font) 获取字体的 Base64 Data URL
- * 5. 可以使用 ctx.glyph.checkFont() 自动下载并加载字体
+ * 5. 可以使用 ctx.glyph.checkFont() 自动下载并加载字体（可选）
+ *
+ * 重要提示：
+ * - 动态配置项在 yarn dev 开发模式下不会显示选项列表
+ * - 在 yarn start 生产模式下可以正常看到并选择字体
  */
 
 import { Context, Schema } from 'koishi';
-import { fontlist } from 'koishi-plugin-glyph';
-/* 
-注意这里你还需要把 koishi-plugin-glyph 写入 package.json 的 devDependencies 才能过编译
-
-  "devDependencies": {
-    "koishi": "^4.18.7",
-    "koishi-plugin-glyph": "^2.0.0"
-  },
-*/
 import type { } from 'koishi-plugin-glyph';
 
 export const name = 'example-plugin';
 
-// 必须注入 fonts 服务才能获取字体 Data URL
+// 声明依赖
 export const inject = {
   required: ['glyph']
 };
 
-export interface Config
-{
-  font: string;  // 这里存储的是字体名称（例如："NotoColorEmoji-Regular"）
+export interface Config {
+  font: string;
   text: string;
 }
 
 export const Config: Schema<Config> = Schema.object({
-  // 使用 Schema.union(fontlist) 来获取字体列表
-  // 用户在 UI 上会看到一个下拉框，包含所有可用的字体
+  // 使用 Schema.dynamic('glyph.fonts') 引用 glyph 服务提供的动态字体列表
   // 配置项的值是字体名称，不是 Data URL
-  font: Schema.union(fontlist).description('选择要使用的字体'),
+  // 再次提示： 动态配置项在 yarn dev 开发模式下不会显示选项列表
+  font: Schema.dynamic('glyph.fonts').description('选择要使用的字体'),
 
   text: Schema.string().default('Hello World').description('要渲染的文本')
 });
 
-export function apply(ctx: Context, config: Config)
-{
-  // 在插件启动时检查并下载所需字体
-  ctx.on('ready', async () =>
-  {
+export function apply(ctx: Context, config: Config) {
+  /**
+   * 在插件启动时检查并下载所需字体（可选）
+   * **********************************************************************
+   */
+  ctx.on('ready', async () => {
     // 示例：检查并下载 Noto Color Emoji 字体
     const fontExists = await ctx.glyph.checkFont(
       'NotoColorEmoji-Regular',
       'https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@main/fonts/NotoColorEmoji.ttf'
     );
 
-    if (fontExists)
-    {
+    if (fontExists) {
       ctx.logger.info('字体已准备就绪: NotoColorEmoji-Regular');
-    } else
-    {
+    } else {
       ctx.logger.warn('字体下载失败: NotoColorEmoji-Regular');
     }
   });
+  /**
+   * **********************************************************************
+   */
 
   ctx.command('test-font')
-    .action(async ({ session }) =>
-    {
+    .action(async ({ session }) => {
       // 如果没有选择字体，使用第一个可用字体
       const selectedFont = config.font || ctx.glyph.getFontNames()[0];
 
-      if (!selectedFont)
-      {
+      if (!selectedFont) {
         return '没有可用的字体';
       }
 
       // config.font 是字体名称，需要通过 glyph 服务获取 Data URL
       const fontDataUrl = ctx.glyph.getFontDataUrl(selectedFont);
 
-      if (!fontDataUrl)
-      {
+      if (!fontDataUrl) {
         return `未找到字体: ${selectedFont}`;
       }
 
