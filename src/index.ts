@@ -1,6 +1,6 @@
 import { Context, Schema, Service } from 'koishi';
-import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs';
-import { readdir, readFile, stat, writeFile, mkdir, access, writeFile as writeFileSync } from 'node:fs/promises';
+import { readdirSync, statSync } from 'node:fs';
+import { readdir, readFile, stat, writeFile, mkdir, access, } from 'node:fs/promises';
 import { resolve, extname, basename, dirname } from 'node:path';
 
 export const name = 'glyph';
