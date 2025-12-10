@@ -1,16 +1,12 @@
 # koishi-plugin-glyph
 
-Koishi 的字体管理器插件
+[![npm](https://img.shields.io/npm/v/koishi-plugin-glyph?style=flat-square)](https://www.npmjs.com/package/koishi-plugin-glyph)
 
-## 功能特性
+Koishi 的字体管理器插件 - 为其他插件提供统一的字体管理服务
 
-- 🎨 自动扫描字体目录，加载所有字体文件
-- 📦 将字体转换为 Base64 Data URL，方便直接使用
-- 🔧 导出 `fontlist` 供其他插件使用，提供字体选择配置项
-- 🚀 提供 `ctx.glyph` 服务，其他插件可以获取字体信息
-- 📥 支持自动下载字体：`ctx.glyph.checkFont(name, url)`
-- ✨ 支持多种字体格式：TTF、OTF、WOFF、WOFF2、TTC、EOT、SVG 等
-- 🎯 内置 `default` 字体选项，用于不使用自定义字体的场景
+## 安装
+
+在 Koishi 插件市场中搜索 `glyph` 安装。
 
 ## 配置
 
@@ -22,111 +18,51 @@ Koishi 的字体管理器插件
 
 例如，如果你的 Koishi 安装在 `/home/user/koishi`，那么字体目录应该是 `/home/user/koishi/data/fonts`。
 
-## 使用方法
+## 完整使用示例
 
-### 1. 在其他插件中使用字体选择器
-
-```typescript
-import { Context, Schema } from 'koishi';
-import { fontlist } from 'koishi-plugin-glyph';
-import type {} from 'koishi-plugin-glyph';  // 导入类型声明
-
-export const name = 'my-plugin';
-
-// 必须注入 glyph 服务
-export const inject = {
-  required: ['glyph']
-};
-
-export interface Config {
-  font: string;  // 存储字体名称
-}
-
-export const Config: Schema<Config> = Schema.object({
-  // 使用 fontlist 提供字体选择
-  font: Schema.union(fontlist).description('选择要使用的字体')
-});
-
-export function apply(ctx: Context, config: Config) {
-  // 获取字体的 Data URL
-  const fontDataUrl = ctx.glyph.getFontDataUrl(config.font);
-  
-  if (fontDataUrl) {
-    // 使用字体 Data URL
-    console.log('字体已加载:', config.font);
-  }
-}
-```
-
-### 2. 自动下载字体
-
-```typescript
-export function apply(ctx: Context, config: Config) {
-  ctx.on('ready', async () => {
-    // 检查字体是否存在，不存在则自动下载
-    const fontExists = await ctx.glyph.checkFont(
-      'NotoColorEmoji-Regular',
-      'https://cdn.jsdelivr.net/gh/googlefonts/noto-emoji@main/fonts/NotoColorEmoji.ttf'
-    );
-    
-    if (fontExists) {
-      console.log('字体已准备就绪');
-    }
-  });
-}
-```
-
-### 3. 使用 default 字体
-
-如果不想使用自定义字体，可以选择 `default` 选项：
-
-```typescript
-const fontDataUrl = ctx.glyph.getFontDataUrl('default');
-// 返回空字符串 ''，表示使用系统默认字体
-```
+参考 [`example-usage.ts`](./example-usage.ts) 文件查看完整的使用示例。
 
 ## API
 
-### ctx.glyph 服务
+参考 [`README API`](./README%20API.md) 文件查看完整的说明。
 
-#### getFontDataUrl(name: string): string | undefined
+## 动态配置项说明
 
-获取指定字体的 Base64 Data URL。
+### 什么是动态配置项？
 
-- 参数：`name` - 字体名称（不含扩展名）
-- 返回：字体的 Data URL，如果字体不存在则返回 `undefined`
-- 特殊：`default` 字体返回空字符串 `''`
+动态配置项 (`Schema.dynamic`) 是 Koishi 提供的一种机制，允许一个插件动态地为其他插件提供配置选项。
 
-#### getFontNames(): string[]
+> <https://koishi.chat/zh-CN/schema/advanced/dynamic.html>
 
-获取所有已加载的字体名称列表。
+### 使用限制
 
-#### getFontInfo(name: string): FontInfo | undefined
+- 动态配置项在开发模式 (`yarn dev`) 下不显示选项列表
+- 需要在生产模式 (`yarn start`) 下才能看到完整的字体选择列表
 
-获取字体的详细信息（名称、格式、大小等）。
+## 常见问题
 
-#### checkFont(fontName: string, downloadUrl: string): Promise<boolean>
+### Q: 为什么在开发模式下看不到字体选项？
 
-检查字体是否存在，如果不存在则从指定 URL 下载。
+A: 这是 Koishi 动态配置项的预期行为。请在生产模式 (`yarn start`) 下查看。
 
-- 参数：
-  - `fontName` - 字体名称（不含扩展名）
-  - `downloadUrl` - 字体文件的下载 URL
-- 返回：`true` 表示字体可用，`false` 表示下载失败
+### Q: 如何添加新字体？
 
-## 配置界面
+A: 将字体文件放入 `data/fonts` 目录，然后重启 Koishi。
 
-用户在 Koishi 控制台的配置界面中，会看到字体列表，包括：
+### Q: 支持哪些字体格式？
 
-- `default` - 不使用自定义字体
-- 其他可用字体（显示字体名称）
+A: 支持 TTF、OTF、WOFF、WOFF2、TTC、EOT、SVG 等常见字体格式。
 
-**注意**：新添加的字体需要重启 Koishi 才能生效。
+### Q: 字体文件很大，会影响性能吗？
 
-## 完整示例
-
-参考 `example-usage.ts` 文件查看完整的使用示例。
+A: 字体在启动时加载一次并缓存为 Base64，不会重复加载。但建议使用压缩过的字体文件。
 
 ## 许可证
 
-MIT
+MIT License
+
+## 相关链接
+
+- [GitHub 仓库](https://github.com/koishi-shangxue-plugins/koishi-plugin-glyph)
+- [问题反馈](https://github.com/koishi-shangxue-plugins/koishi-plugin-glyph/issues)
+- [Koishi 官网](https://koishi.chat)

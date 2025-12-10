@@ -3,20 +3,22 @@
  *
  * 使用方法：
  * 1. 将 koishi-plugin-glyph 添加到 devDependencies (仅用于获取类型)
- ```json
-   "devDependencies": {
-    "koishi": "^4.18.0",
-    "koishi-plugin-glyph": "^3.0.0"
-  }
- ```
+      ```json
+        "devDependencies": {
+          "koishi": "^4.18.0",
+          "koishi-plugin-glyph": "^3.0.0"
+        }
+      ```
  * 2. 使用 Schema.dynamic('glyph.fonts') 引用字体列表
  * 3. 使用 inject 声明 glyph 服务
  * 4. 通过 ctx.glyph.getFontDataUrl(config.font) 获取字体的 Base64 Data URL
  * 5. 可以使用 ctx.glyph.checkFont() 自动下载并加载字体（可选）
- *
+ * 
+ * **********************************************************************
  * 重要提示：
  * - 动态配置项在 yarn dev 开发模式下不会显示选项列表
  * - 在 yarn start 生产模式下可以正常看到并选择字体
+ * **********************************************************************
  */
 
 import { Context, Schema } from 'koishi';
@@ -37,7 +39,7 @@ export interface Config {
 export const Config: Schema<Config> = Schema.object({
   // 使用 Schema.dynamic('glyph.fonts') 引用 glyph 服务提供的动态字体列表
   // 配置项的值是字体名称，不是 Data URL
-  // 再次提示： 动态配置项在 yarn dev 开发模式下不会显示选项列表
+  // **再次提示**  动态配置项在 yarn dev 开发模式下不会显示选项列表
   font: Schema.dynamic('glyph.fonts').description('选择要使用的字体'),
 
   text: Schema.string().default('Hello World').description('要渲染的文本')
