@@ -10,6 +10,6 @@ export default (ctx: Context) => {
     path: '/glyph',
     icon: 'glyph',
     component: layout,
-    fields: ['glyph'],
+    fields: ['glyph' as keyof import('@koishijs/plugin-console').Console.Services],
   })
 }

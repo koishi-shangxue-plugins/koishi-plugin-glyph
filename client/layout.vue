@@ -1,87 +1,135 @@
 <script lang="ts" setup>
 import { send, store } from '@koishijs/client'
-import { computed, reactive, ref } from 'vue'
-import type { } from 'element-plus'
-import type { } from '../lib'
+import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import type { UploadFile } from 'element-plus'
+
+// 字体信息接口
+interface GlyphFont {
+  name: string
+  fileName: string
+  format: string
+  size: number
+  path: string
+  dataUrl?: string
+}
+
+// 扩展store类型
+interface GlyphStore {
+  fonts: GlyphFont[]
+}
 
 const keyword = ref('')
+const showUploadDialog = ref(false)
+const showPreviewDialog = ref(false)
+const previewFont = ref<GlyphFont | null>(null)
+const previewText = ref('字体预览 Font Preview 1234567890')
+const uploadFile = ref<File | null>(null)
 
-const showDialog = ref(false)
+// 动态注入字体样式
+const fontStyleId = 'glyph-preview-font-style'
 
-const newDownload = reactive({
-  name: '',
-  urls: '',
-})
-
-function resetNewDownload() {
-  newDownload.name = ''
-  newDownload.urls = ''
-  showDialog.value = false
-}
-
-function createDownload() {
-  send('glyph/download', newDownload.name, newDownload.urls.trim().split('\n'))
-  resetNewDownload()
-}
-
-type Download = typeof store.glyph.downloads[0]
-
-const disable = (download: Download) =>
-  download.files.some((file) => file.finished)
-
-const disableOne = (file) => file.finished || file.cancel
-
-const indeterminate = (file) => file.failure || file.cancel
-
-const status = (file): 'success' | 'warning' | 'exception' => {
-  if (file.failure) return 'exception'
-  if (file.cancel) return 'warning'
-  if (file.finished) return 'success'
-}
-
-const percentage = (file) =>
-  file.contentLength ? Math.floor((file.downloaded / file.contentLength) * 100) : file.finished ? 100 : 0
-
-function cancel(name, paths) {
-  send('glyph/cancel', name, paths)
-}
-
-function deleteglyph(name, glyph) {
-  send('glyph/delete', name, glyph)
-}
-
-function groupByFamily(data) {
-  const grouped = {}
-  data.forEach((item) => {
-    if (!grouped[item.family]) {
-      grouped[item.family] = { family: item.family, size: 0, children: [] }
-    }
-    grouped[item.family].children.push(item)
-    grouped[item.family].size += item.size
-  })
-  return Object.values(grouped)
-}
-
-const activeNames = ref([])
-
-const filteredglyph = computed(() => {
-  const searchTerm = keyword.value.trim().toLowerCase()
-
-  if (!searchTerm) {
-    return groupByFamily(store.glyph.glyph)
+// 监听预览字体变化，动态注入样式
+watch(previewFont, (font) => {
+  // 移除旧的样式
+  const oldStyle = document.getElementById(fontStyleId)
+  if (oldStyle) {
+    oldStyle.remove()
   }
 
-  const filteredglyph = store.glyph.glyph.filter((font) => {
+  // 如果有新字体且有dataUrl，注入新样式
+  if (font && font.dataUrl) {
+    const style = document.createElement('style')
+    style.id = fontStyleId
+    style.textContent = `
+      @font-face {
+        font-family: '${font.name}';
+        src: url('${font.dataUrl}');
+      }
+    `
+    document.head.appendChild(style)
+  }
+})
+
+// 重置上传对话框
+function resetUpload() {
+  uploadFile.value = null
+  showUploadDialog.value = false
+}
+
+// 处理文件选择
+function handleFileChange(file: UploadFile) {
+  if (file.raw) {
+    uploadFile.value = file.raw
+  }
+}
+
+// 上传字体文件
+async function uploadFont() {
+  if (!uploadFile.value) {
+    ElMessage.warning('请选择字体文件')
+    return
+  }
+
+  try {
+    // 读取文件为base64
+    const reader = new FileReader()
+    reader.onload = async (e) => {
+      const base64Data = e.target?.result as string
+      send('glyph/upload' as any, uploadFile.value!.name, base64Data)
+      ElMessage.success('字体上传成功')
+      resetUpload()
+    }
+    reader.onerror = () => {
+      ElMessage.error('文件读取失败')
+    }
+    reader.readAsDataURL(uploadFile.value)
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : '未知错误'
+    ElMessage.error('上传失败: ' + message)
+  }
+}
+
+// 删除字体
+async function deleteFont(fontName: string) {
+  try {
+    send('glyph/delete' as any, fontName)
+    ElMessage.success('字体删除成功')
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : '未知错误'
+    ElMessage.error('删除失败: ' + message)
+  }
+}
+
+// 预览字体
+function previewFontStyle(font: GlyphFont) {
+  previewFont.value = font
+  showPreviewDialog.value = true
+}
+
+// 格式化文件大小
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB'
+  return (bytes / (1024 * 1024)).toFixed(2) + ' MB'
+}
+
+// 过滤字体列表
+const filteredFonts = computed(() => {
+  const searchTerm = keyword.value.trim().toLowerCase()
+  const fonts = ((store as any).glyph?.fonts as GlyphFont[]) || []
+
+  if (!searchTerm) {
+    return fonts
+  }
+
+  return fonts.filter((font: GlyphFont) => {
     return (
-      font.family?.toLowerCase().includes(searchTerm) ||
+      font.name?.toLowerCase().includes(searchTerm) ||
       font.fileName?.toLowerCase().includes(searchTerm) ||
-      font.path?.toLowerCase().includes(searchTerm) ||
-      font.format?.toLowerCase().includes(searchTerm) ||
-      font.id?.toLowerCase().includes(searchTerm)
+      font.format?.toLowerCase().includes(searchTerm)
     )
   })
-
-  return groupByFamily(filteredglyph)
 })
 
 </script>
@@ -89,97 +137,82 @@ const filteredglyph = computed(() => {
 <template>
   <k-layout>
     <div class="container">
+      <!-- 搜索和上传按钮 -->
       <div class="my-4 flex items-center px-4">
-        <el-input class="flex-1" v-model="keyword" clearable placeholder="输入关键词搜索…" #suffix>
+        <el-input class="flex-1" v-model="keyword" clearable placeholder="输入关键词搜索字体…" #suffix>
           <k-icon name="search" />
         </el-input>
-
-        <el-button class="ml-4" @click="showDialog = true">新建下载</el-button>
+        <el-button class="ml-4" type="primary" @click="showUploadDialog = true">
+          <k-icon name="upload" />
+          上传字体
+        </el-button>
       </div>
 
-      <el-dialog v-model="showDialog">
-        <template #title>新建下载</template>
-        <template #default>
-          <el-input class="my-2" v-model="newDownload.name" placeholder="输入字体名称" />
-          <el-input class="my-2" v-model="newDownload.urls" placeholder="输入下载链接，以回车分隔不同路径" type="textarea"
-            :autosize="{ minRows: 4, maxRows: 16 }" />
-        </template>
+      <!-- 上传对话框 -->
+      <el-dialog v-model="showUploadDialog" title="上传字体文件" width="500px">
+        <el-upload drag :auto-upload="false" :limit="1" accept=".ttf,.otf,.woff,.woff2,.ttc,.eot,.svg"
+          :on-change="handleFileChange">
+          <k-icon name="upload" style="font-size: 48px; margin-bottom: 16px;" />
+          <div class="el-upload__text">
+            将字体文件拖到此处，或<em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持 .ttf, .otf, .woff, .woff2, .ttc, .eot, .svg 格式
+            </div>
+          </template>
+        </el-upload>
         <template #footer>
-          <el-button @click="resetNewDownload">取消</el-button>
-          <el-button type="primary" @click="createDownload">确定</el-button>
+          <el-button @click="resetUpload">取消</el-button>
+          <el-button type="primary" @click="uploadFont" :disabled="!uploadFile">确定上传</el-button>
         </template>
       </el-dialog>
 
-      <!-- Download -->
-      <template v-if="Object.keys(store.glyph.downloads).length">
-        <el-scrollbar class="downloads-scrollbar" ref="downloadsRef">
-          <el-card class="download-card" shadow="never">
-            <template #header>
-              <div class="text-bold">下载中</div>
-            </template>
-            <div>
-              <el-collapse v-model="activeNames">
-                <el-collapse-item v-for="download in store.glyph.downloads" :name="download.name" :key="download.name"
-                  :show-arrow="true">
-                  <template #title>
-                    <div class="item-title paths">
-                      <span>{{ download.name }}</span>
-                      <el-button class="button-container" :disabled="disable(download)" :plain="disable(download)"
-                        @click.stop="cancel(download.name, [])">
-                        取消
-                      </el-button>
-                    </div>
-                  </template>
-                  <el-row class="paths" v-for="file in download.files">
-                    <el-col :span="4"></el-col>
-                    <el-col :span="16">
-                      <el-progress class="file-progress" :percentage="percentage(file)"
-                        :indeterminate="indeterminate(file)" :status="status(file)" />
-                    </el-col>
-                    <el-col :span="4" class="button-container">
-                      <el-button @click="cancel(download.name, [file.url])" :disabled="disableOne(file)"
-                        :plain="disableOne(file)">
-                        取消
-                      </el-button>
-                    </el-col>
-                  </el-row>
-                </el-collapse-item>
-              </el-collapse>
-            </div>
-          </el-card>
-        </el-scrollbar>
-      </template>
+      <!-- 字体预览对话框 -->
+      <el-dialog v-model="showPreviewDialog" title="字体预览" width="600px">
+        <div v-if="previewFont" class="preview-container">
+          <div class="preview-info">
+            <p><strong>字体名称：</strong>{{ previewFont.name }}</p>
+            <p><strong>文件名：</strong>{{ previewFont.fileName }}</p>
+            <p><strong>格式：</strong>{{ previewFont.format }}</p>
+            <p><strong>大小：</strong>{{ formatSize(previewFont.size) }}</p>
+          </div>
+          <el-divider />
+          <el-input v-model="previewText" type="textarea" :rows="2" placeholder="输入预览文本" class="mb-4" />
+          <div class="preview-text" :style="{
+            fontFamily: previewFont.name,
+            fontSize: '32px',
+            lineHeight: '1.5'
+          }">
+            {{ previewText }}
+          </div>
+        </div>
+      </el-dialog>
 
-      <el-scrollbar class="glyph-list" ref="rootRef">
-        <template v-if="filteredglyph.length === 0">
+      <!-- 字体列表 -->
+      <el-scrollbar class="fonts-list">
+        <template v-if="filteredFonts.length === 0">
           <el-empty :description="keyword.trim() ? '未找到字体' : '暂无字体'" />
         </template>
 
-        <el-table v-if="filteredglyph.length !== 0" :data="filteredglyph" row-kay="family"
-          class="glyph-list is-always-shadow" ref="rootRef" border>
-          <el-table-column type="expand">
-            <template #default="scope">
-              <el-table :data="scope.row.children" border>
-                <el-table-column label="文件名" prop="fileName" />
-                <el-table-column label="路径" prop="path" />
-                <el-table-column label="唯一标识" prop="id" />
-                <el-table-column label="大小" prop="size" />
-                <el-table-column label="操作">
-                  <template #default="scope">
-                    <el-button @click="deleteglyph(scope.row.family, [scope.row])" plain>
-                      <k-icon name="delete" />
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
+        <el-table v-else :data="filteredFonts" class="fonts-table" border stripe>
+          <el-table-column label="字体名称" prop="name" min-width="150" />
+          <el-table-column label="文件名" prop="fileName" min-width="180" />
+          <el-table-column label="格式" prop="format" width="80" align="center" />
+          <el-table-column label="大小" width="120" align="right">
+            <template #default="{ row }">
+              {{ formatSize(row.size) }}
             </template>
           </el-table-column>
-          <el-table-column label="字体名" prop="family" />
-          <el-table-column label="大小" prop="size" />
-          <el-table-column label="操作">
-            <template #default="scope">
-              <el-button @click="deleteglyph(scope.row.family, scope.row.children)" plain>
+          <el-table-column label="操作" width="180" align="center">
+            <template #default="{ row }">
+              <el-button size="small" @click="previewFontStyle(row)" :disabled="!row.dataUrl">
+                <k-icon name="eye" />
+                预览
+              </el-button>
+              <el-button size="small" type="danger" plain @click="deleteFont(row.name)">
                 <k-icon name="delete" />
+                删除
               </el-button>
             </template>
           </el-table-column>
@@ -191,7 +224,7 @@ const filteredglyph = computed(() => {
 
 <style lang="scss" scoped>
 .container {
-  max-width: 800px;
+  max-width: 1000px;
   height: calc(100% - 30px);
   display: flex;
   margin-left: auto;
@@ -199,58 +232,37 @@ const filteredglyph = computed(() => {
   flex-direction: column;
 }
 
-.download-card {
-  :deep(.el-card__body) {
-    padding: 0;
-    height: 100%;
-  }
-}
-
-.item-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  padding: 0 16px;
-  position: relative;
-
-  span {
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    margin-left: 0;
-  }
-
-  .button-container {
-    margin-left: auto;
-  }
-}
-
-.downloads-scrollbar {
-  width: 100%;
-  max-height: 40%;
-  margin-bottom: 20px;
-}
-
-:deep(.el-table__expanded-cell) {
-  padding: 0;
-}
-
-.glyph-list {
+.fonts-list {
   width: 100%;
   flex-grow: 1;
   overflow: auto;
 }
 
-.paths {
-  align-items: center;
+.fonts-table {
+  width: 100%;
 }
 
-.button-container {
-  opacity: 0;
+.preview-container {
+  padding: 16px;
 }
 
-.paths:hover .button-container {
-  opacity: 1;
+.preview-info {
+  p {
+    margin: 8px 0;
+    line-height: 1.6;
+  }
+}
+
+.preview-text {
+  padding: 20px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 4px;
+  background-color: var(--el-fill-color-blank);
+  min-height: 100px;
+  word-break: break-all;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
 }
 </style>

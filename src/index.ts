@@ -3,6 +3,9 @@ import { ref, watch } from '@vue/reactivity';
 import { FSWatcher, watch as fsWatch } from 'node:fs';
 import { readdir, readFile, stat, writeFile, mkdir, access, } from 'node:fs/promises';
 import { resolve, extname, basename, dirname } from 'node:path';
+import { GlyphProvider } from './page';
+
+import type { } from '@koishijs/console';
 
 export const name = 'glyph';
 export const reusable = false;
@@ -10,7 +13,7 @@ export const filter = false;
 
 export const inject = {
   required: ['http', 'logger'],
-  optional: [],
+  optional: ['console'],
 };
 
 export const usage = `
@@ -372,7 +375,7 @@ export function apply(ctx: Context, config: FontsService.Config) {
     // 监听响应式字体列表的变化，并更新 Schema
     const schemaWatcher = watch(ctx.glyph.fontNames, (names) => {
       const finalNames = names || [];
-      // 如果只有两个“无”选项，则将它们渲染为 Schema.const，以确保 UI 正确显示
+      // 如果只有两个"无"选项，则将它们渲染为 Schema.const，以确保 UI 正确显示
       if (finalNames.length === 2 && finalNames[0] === '无' && finalNames[1].trim() === '无') {
         ctx.schema.set('glyph.fonts', Schema.union([
           Schema.const('无').description('无'),
@@ -391,6 +394,18 @@ export function apply(ctx: Context, config: FontsService.Config) {
         schemaWatcher.stop();
         ctx.glyph.stop(); // 停止文件监听
       };
+    });
+  });
+
+  // 注册前端页面和Provider
+  ctx.inject(['console', 'glyph'], (ctx) => {
+    // 注册Provider服务
+    ctx.plugin(GlyphProvider, ctx.glyph);
+
+    // 注册前端入口
+    ctx.console.addEntry({
+      dev: resolve(__dirname, '../client/index.ts'),
+      prod: resolve(__dirname, '../dist'),
     });
   });
 }
