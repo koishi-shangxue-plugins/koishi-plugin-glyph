@@ -11,6 +11,8 @@ export default (ctx: Context) => {
     name: '字体管理',
     path: '/glyph',
     icon: 'glyph',
+    desc: "",
+    authority: 4,
     component: defineComponent({
       setup() {
         return () => h(resolveComponent('k-layout'), {}, {

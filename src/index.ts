@@ -93,6 +93,12 @@ export class FontsService extends Service {
     await this.loadFontNames();
     this.ctx.logger.debug(`已扫描 ${this.fontNames.value.length} 个字体文件`);
 
+    // 延迟触发 Schema 更新，确保 Schema 系统已准备好
+    setTimeout(() => {
+      this.updateSchema();
+      this.ctx.logger.debug('已触发 Schema 更新');
+    }, 1000);
+
     // 启动文件监听
     this.watcher = fsWatch(this.fontRoot, (eventType, filename) => {
       if (filename) {
@@ -109,6 +115,21 @@ export class FontsService extends Service {
     }, this.CLEANUP_INTERVAL);
 
     this.ctx.logger.debug(`字体内存管理已启动，TTL: ${this.config.fontTTL} 分钟`);
+  }
+
+  // 更新 Schema（供内部和外部调用）
+  private updateSchema() {
+    const finalNames = this.fontNames.value || [];
+    // 如果只有两个"无"选项，则将它们渲染为 Schema.const
+    if (finalNames.length === 2 && finalNames[0] === '无' && finalNames[1].trim() === '无') {
+      this.ctx.schema.set('glyph.fonts', Schema.union([
+        Schema.const('无').description('无'),
+        Schema.const('无 ').description('请将字体文件放入koishi的 ./data/fonts 文件夹下'),
+      ]));
+    } else {
+      // 否则，正常渲染列表
+      this.ctx.schema.set('glyph.fonts', Schema.union(finalNames));
+    }
   }
 
   stop() {
@@ -531,19 +552,9 @@ export function apply(ctx: Context, config: FontsService.Config) {
   // 使用 ctx.inject 确保在 glyph 服务可用后再执行监听逻辑
   ctx.inject(['glyph'], (ctx) => {
     // 监听响应式字体列表的变化，并更新 Schema
-    const schemaWatcher = watch(ctx.glyph.fontNames, (names) => {
-      const finalNames = names || [];
-      // 如果只有两个"无"选项，则将它们渲染为 Schema.const，以确保 UI 正确显示
-      if (finalNames.length === 2 && finalNames[0] === '无' && finalNames[1].trim() === '无') {
-        ctx.schema.set('glyph.fonts', Schema.union([
-          Schema.const('无').description('无'),
-          Schema.const('无 ').description('请将字体文件放入koishi的 ./data/fonts 文件夹下'),
-        ]));
-      } else {
-        // 否则，正常渲染列表
-        ctx.schema.set('glyph.fonts', Schema.union(finalNames));
-      }
-    }, { immediate: true });
+    const schemaWatcher = watch(ctx.glyph.fontNames, () => {
+      ctx.glyph['updateSchema']();
+    });
 
     // 在插件卸载时停止所有监听
     ctx.effect(() => {
