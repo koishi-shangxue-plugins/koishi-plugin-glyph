@@ -18,6 +18,6 @@ export default (ctx: Context) => {
         })
       },
     }),
-    fields: ['glyph' as any],
+    fields: ['glyph' as keyof import('@koishijs/plugin-console').Console.Services],
   })
 }

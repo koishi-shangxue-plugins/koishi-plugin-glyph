@@ -1,7 +1,7 @@
 <script lang="ts" setup>
 import { send, store } from '@koishijs/client'
 import { computed, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 
 // 字体信息接口
@@ -12,11 +12,6 @@ interface GlyphFont {
   size: number
   path: string
   dataUrl?: string
-}
-
-// 扩展store类型
-interface GlyphStore {
-  fonts: GlyphFont[]
 }
 
 const keyword = ref('')
@@ -90,12 +85,26 @@ async function uploadFont() {
   }
 }
 
-// 删除字体
+// 删除字体（带二次确认）
 async function deleteFont(fontName: string) {
   try {
+    await ElMessageBox.confirm(
+      `确定要删除字体 "${fontName}" 吗？此操作不可恢复。`,
+      '删除确认',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+
     send('glyph/delete' as any, fontName)
     ElMessage.success('字体删除成功')
   } catch (err: unknown) {
+    // 用户取消删除
+    if (err === 'cancel') {
+      return
+    }
     const message = err instanceof Error ? err.message : '未知错误'
     ElMessage.error('删除失败: ' + message)
   }
@@ -194,7 +203,7 @@ const filteredFonts = computed(() => {
         <el-empty :description="keyword.trim() ? '未找到字体' : '暂无字体'" />
       </template>
 
-      <el-table v-else :data="filteredFonts" class="fonts-table" border stripe>
+      <el-table v-else :data="filteredFonts" class="fonts-table" border>
         <el-table-column label="字体名称" prop="name" min-width="150" />
         <el-table-column label="文件名" prop="fileName" min-width="180" />
         <el-table-column label="格式" prop="format" width="80" align="center" />
