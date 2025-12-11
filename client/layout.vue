@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { send, store } from '@koishijs/client'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { UploadFile } from 'element-plus'
 
@@ -23,11 +23,110 @@ const uploadFile = ref<File | null>(null)
 const uploadProgress = ref(0) // 上传进度 0-100
 const isUploading = ref(false) // 是否正在上传
 const uploadRef = ref() // el-upload 组件引用
+const previewCanvasRef = ref<HTMLCanvasElement>() // Canvas引用
 
 // 动态注入字体样式
 const fontStyleId = 'glyph-preview-font-style'
 
-// 监听预览字体变化，动态注入样式
+// 检测字体是否包含字符的函数
+function checkCharInFont(char: string, fontFamily: string): boolean {
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return false
+
+  const fontSize = 100
+  canvas.width = fontSize * 2
+  canvas.height = fontSize * 2
+
+  // 使用默认字体绘制
+  ctx.font = `${fontSize}px monospace`
+  ctx.fillText(char, 0, fontSize)
+  const defaultData = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+
+  // 清空画布
+  ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+  // 使用目标字体绘制
+  ctx.font = `${fontSize}px "${fontFamily}", monospace`
+  ctx.fillText(char, 0, fontSize)
+  const fontData = ctx.getImageData(0, 0, canvas.width, canvas.height).data
+
+  // 比较两次绘制的结果
+  for (let i = 0; i < defaultData.length; i++) {
+    if (defaultData[i] !== fontData[i]) {
+      return true // 字体包含该字符
+    }
+  }
+  return false // 字体不包含该字符
+}
+
+// 渲染预览文本到Canvas
+function renderPreviewToCanvas() {
+  if (!previewFont.value || !previewCanvasRef.value) return
+
+  const font = previewFont.value // 保存引用避免null检查问题
+
+  nextTick(() => {
+    const canvas = previewCanvasRef.value
+    if (!canvas) return
+
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const text = previewText.value
+    const fontSize = 32
+    const lineHeight = fontSize * 1.5
+    const padding = 20
+
+    // 设置字体
+    ctx.font = `${fontSize}px "${font.name}"`
+
+    // 计算文本尺寸
+    const lines = text.split('\n')
+    let maxWidth = 0
+    for (const line of lines) {
+      const width = ctx.measureText(line).width
+      if (width > maxWidth) maxWidth = width
+    }
+
+    // 设置Canvas尺寸
+    canvas.width = maxWidth + padding * 2
+    canvas.height = lines.length * lineHeight + padding * 2
+
+    // 重新设置字体（Canvas尺寸改变后会重置）
+    ctx.font = `${fontSize}px "${font.name}"`
+    ctx.textBaseline = 'top'
+
+    // 绘制背景
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+    // 绘制文本
+    ctx.fillStyle = '#000000'
+    let y = padding
+    for (const line of lines) {
+      let x = padding
+      // 逐字符绘制，检测每个字符
+      for (const char of line) {
+        const hasChar = checkCharInFont(char, font.name)
+        if (hasChar) {
+          // 字体包含该字符，正常绘制
+          ctx.fillText(char, x, y)
+        } else {
+          // 字体不包含该字符，绘制方框
+          const charWidth = ctx.measureText(char).width || fontSize * 0.6
+          ctx.strokeStyle = '#000000'
+          ctx.lineWidth = 2
+          ctx.strokeRect(x + 2, y + 2, charWidth - 4, fontSize - 4)
+        }
+        x += ctx.measureText(char).width
+      }
+      y += lineHeight
+    }
+  })
+}
+
+// 监听预览字体变化，动态注入样式并渲染Canvas
 watch(previewFont, (font) => {
   // 移除旧的样式
   const oldStyle = document.getElementById(fontStyleId)
@@ -43,9 +142,22 @@ watch(previewFont, (font) => {
       @font-face {
         font-family: '${font.name}';
         src: url('${font.dataUrl}');
+        font-display: block;
       }
     `
     document.head.appendChild(style)
+
+    // 等待字体加载后渲染Canvas
+    document.fonts.ready.then(() => {
+      renderPreviewToCanvas()
+    })
+  }
+})
+
+// 监听预览文本变化，重新渲染Canvas
+watch(previewText, () => {
+  if (previewFont.value) {
+    renderPreviewToCanvas()
   }
 })
 
@@ -228,12 +340,8 @@ const filteredFonts = computed(() => {
         </div>
         <el-divider />
         <el-input v-model="previewText" type="textarea" :rows="2" placeholder="输入预览文本" class="mb-4" />
-        <div class="preview-text" :style="{
-          fontFamily: previewFont.name,
-          fontSize: '32px',
-          lineHeight: '1.5'
-        }">
-          {{ previewText }}
+        <div class="preview-canvas-container">
+          <canvas ref="previewCanvasRef" class="preview-canvas"></canvas>
         </div>
       </div>
     </el-dialog>
@@ -270,6 +378,26 @@ const filteredFonts = computed(() => {
   </div>
 </template>
 
+<style lang="scss">
+// 全局样式，不使用 scoped，确保能覆盖所有继承
+.no-fallback {
+  // 禁用所有字体合成和fallback机制
+  font-synthesis: none !important;
+  font-variant-ligatures: none !important;
+  font-feature-settings: normal !important;
+
+  // 强制所有子元素继承字体，不使用任何fallback
+  * {
+    font-family: inherit !important;
+  }
+
+  // 禁用浏览器的字体替换
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+</style>
+
 <style lang="scss" scoped>
 .container {
   max-width: 1000px;
@@ -301,13 +429,22 @@ const filteredFonts = computed(() => {
   }
 }
 
-.preview-text {
+.preview-canvas-container {
   padding: 20px;
   border: 1px solid var(--el-border-color);
   border-radius: 4px;
   background-color: var(--el-fill-color-blank);
   min-height: 100px;
-  word-break: break-all;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.preview-canvas {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 .mb-4 {
