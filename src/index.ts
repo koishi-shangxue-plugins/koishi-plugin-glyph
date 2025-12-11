@@ -1,7 +1,7 @@
 import { Context, Schema, Service } from 'koishi';
 import { ref, watch } from '@vue/reactivity';
 import { FSWatcher, watch as fsWatch } from 'node:fs';
-import { readdir, readFile, stat, writeFile, mkdir, access, } from 'node:fs/promises';
+import { readdir, readFile, stat, writeFile, mkdir, access, unlink } from 'node:fs/promises';
 import { resolve, extname, basename, dirname } from 'node:path';
 import { GlyphProvider } from './page';
 
@@ -93,10 +93,9 @@ export class FontsService extends Service {
     await this.loadFontNames();
     this.ctx.logger.debug(`已扫描 ${this.fontNames.value.length} 个字体文件`);
 
-    // 延迟触发 Schema 更新，确保 Schema 系统已准备好
-    setTimeout(() => {
-      this.updateSchema();
-      this.ctx.logger.debug('已触发 Schema 更新');
+    // 延迟触发 Schema 更新（通过文件系统变化触发）
+    setTimeout(async () => {
+      await this.triggerSchemaUpdate();
     }, 1000);
 
     // 启动文件监听
@@ -129,6 +128,22 @@ export class FontsService extends Service {
     } else {
       // 否则，正常渲染列表
       this.ctx.schema.set('glyph.fonts', Schema.union(finalNames));
+    }
+  }
+
+  // 通过文件系统变化触发 Schema 更新
+  private async triggerSchemaUpdate() {
+    const dummyFile = resolve(this.fontRoot, '.schema-trigger.tmp');
+    try {
+      // 创建临时文件
+      await writeFile(dummyFile, '');
+      // 立即删除
+      await unlink(dummyFile);
+      this.ctx.logger.debug('已通过文件系统变化触发 Schema 更新');
+    } catch (err) {
+      // 如果失败，回退到直接更新
+      this.ctx.logger.debug('文件系统触发失败，使用直接更新');
+      this.updateSchema();
     }
   }
 
