@@ -342,7 +342,6 @@ export class FontsService extends Service {
   }
 
   // 获取所有字体名称列表
-  // 获取所有字体名称列表
   getFontNames(): string[] {
     return this.fontNames.value;
   }
