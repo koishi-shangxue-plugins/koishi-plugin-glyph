@@ -29,7 +29,10 @@ const previewCanvasRef = ref<HTMLCanvasElement>() // Canvas引用
 const fontStyleId = 'glyph-preview-font-style'
 
 // 检测字体是否包含字符的函数
-function checkCharInFont(char: string, fontFamily: string): boolean {
+async function checkCharInFont(char: string, fontFamily: string): Promise<boolean> {
+  // 等待字体加载完成
+  await document.fonts.load(`100px "${fontFamily}"`)
+
   const canvas = document.createElement('canvas')
   const ctx = canvas.getContext('2d')
   if (!ctx) return false
@@ -47,7 +50,7 @@ function checkCharInFont(char: string, fontFamily: string): boolean {
   ctx.clearRect(0, 0, canvas.width, canvas.height)
 
   // 使用目标字体绘制
-  ctx.font = `${fontSize}px "${fontFamily}", monospace`
+  ctx.font = `${fontSize}px "${fontFamily}"`
   ctx.fillText(char, 0, fontSize)
   const fontData = ctx.getImageData(0, 0, canvas.width, canvas.height).data
 
@@ -61,69 +64,93 @@ function checkCharInFont(char: string, fontFamily: string): boolean {
 }
 
 // 渲染预览文本到Canvas
-function renderPreviewToCanvas() {
+async function renderPreviewToCanvas() {
   if (!previewFont.value || !previewCanvasRef.value) return
 
   const font = previewFont.value // 保存引用避免null检查问题
 
-  nextTick(() => {
-    const canvas = previewCanvasRef.value
-    if (!canvas) return
+  await nextTick()
 
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+  const canvas = previewCanvasRef.value
+  if (!canvas) return
 
-    const text = previewText.value
-    const fontSize = 32
-    const lineHeight = fontSize * 1.5
-    const padding = 20
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
 
-    // 设置字体
-    ctx.font = `${fontSize}px "${font.name}"`
+  // 等待字体加载完成
+  await document.fonts.load(`32px "${font.name}"`)
 
-    // 计算文本尺寸
-    const lines = text.split('\n')
-    let maxWidth = 0
-    for (const line of lines) {
-      const width = ctx.measureText(line).width
-      if (width > maxWidth) maxWidth = width
+  const text = previewText.value
+  const fontSize = 32
+  const lineHeight = fontSize * 1.5
+  const padding = 20
+  const maxWidth = 560 // 最大宽度，用于自动换行
+
+  // 设置字体
+  ctx.font = `${fontSize}px "${font.name}"`
+
+  // 自动换行处理
+  const lines: string[] = []
+  const paragraphs = text.split('\n')
+
+  for (const paragraph of paragraphs) {
+    if (!paragraph) {
+      lines.push('')
+      continue
     }
 
-    // 设置Canvas尺寸
-    canvas.width = maxWidth + padding * 2
-    canvas.height = lines.length * lineHeight + padding * 2
+    let currentLine = ''
+    for (const char of paragraph) {
+      const testLine = currentLine + char
+      const metrics = ctx.measureText(testLine)
 
-    // 重新设置字体（Canvas尺寸改变后会重置）
-    ctx.font = `${fontSize}px "${font.name}"`
-    ctx.textBaseline = 'top'
-
-    // 绘制背景
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-
-    // 绘制文本
-    ctx.fillStyle = '#000000'
-    let y = padding
-    for (const line of lines) {
-      let x = padding
-      // 逐字符绘制，检测每个字符
-      for (const char of line) {
-        const hasChar = checkCharInFont(char, font.name)
-        if (hasChar) {
-          // 字体包含该字符，正常绘制
-          ctx.fillText(char, x, y)
-        } else {
-          // 字体不包含该字符，绘制方框
-          const charWidth = ctx.measureText(char).width || fontSize * 0.6
-          ctx.strokeStyle = '#000000'
-          ctx.lineWidth = 2
-          ctx.strokeRect(x + 2, y + 2, charWidth - 4, fontSize - 4)
-        }
-        x += ctx.measureText(char).width
+      if (metrics.width > maxWidth && currentLine) {
+        lines.push(currentLine)
+        currentLine = char
+      } else {
+        currentLine = testLine
       }
-      y += lineHeight
     }
-  })
+    if (currentLine) {
+      lines.push(currentLine)
+    }
+  }
+
+  // 设置Canvas尺寸
+  canvas.width = maxWidth + padding * 2
+  canvas.height = lines.length * lineHeight + padding * 2
+
+  // 重新设置字体（Canvas尺寸改变后会重置）
+  ctx.font = `${fontSize}px "${font.name}"`
+  ctx.textBaseline = 'top'
+
+  // 绘制背景
+  ctx.fillStyle = '#ffffff'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+
+  // 绘制文本
+  ctx.fillStyle = '#000000'
+  let y = padding
+
+  for (const line of lines) {
+    let x = padding
+    // 逐字符绘制，检测每个字符
+    for (const char of line) {
+      const hasChar = await checkCharInFont(char, font.name)
+      if (hasChar) {
+        // 字体包含该字符，正常绘制
+        ctx.fillText(char, x, y)
+      } else {
+        // 字体不包含该字符，绘制方框
+        const charWidth = ctx.measureText(char).width || fontSize * 0.6
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = 2
+        ctx.strokeRect(x + 2, y + 2, charWidth - 4, fontSize - 4)
+      }
+      x += ctx.measureText(char).width
+    }
+    y += lineHeight
+  }
 }
 
 // 监听预览字体变化，动态注入样式并渲染Canvas
@@ -147,10 +174,10 @@ watch(previewFont, (font) => {
     `
     document.head.appendChild(style)
 
-    // 等待字体加载后渲染Canvas
-    document.fonts.ready.then(() => {
+    // 延迟渲染，确保字体已注入
+    setTimeout(() => {
       renderPreviewToCanvas()
-    })
+    }, 100)
   }
 })
 
