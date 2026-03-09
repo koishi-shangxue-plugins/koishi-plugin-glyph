@@ -551,6 +551,7 @@ export namespace FontsService {
     root: string;
     fontPreview: string;
     fontTTL: number;
+    enableUI: boolean;
   }
 
   export const Config: Schema<Config> = Schema.intersect([
@@ -566,7 +567,11 @@ export namespace FontsService {
         .default(5)
         .min(1)
         .max(60)
-        .description('字体在内存中的存活时间（分钟）<br>超过此时间未使用的字体将被自动释放')
+        .description('字体在内存中的存活时间（分钟）<br>超过此时间未使用的字体将被自动释放'),
+
+      enableUI: Schema.boolean()
+        .default(false)
+        .description('是否启用控制台 UI 入口<br>开启后会在侧边栏显示字体管理页面')
     }).description('基础设置'),
 
     Schema.object({
@@ -604,11 +609,12 @@ export function apply(ctx: Context, config: FontsService.Config) {
 
   // 注册前端页面和Provider
   ctx.inject(['console', 'glyph'], (ctx) => {
-    // 注册前端入口
-    ctx.console.addEntry({
-      dev: resolve(__dirname, '../client/index.ts'),
-      prod: resolve(__dirname, '../dist'),
-    });
+    if (config.enableUI) {
+      ctx.console.addEntry({
+        dev: resolve(__dirname, '../client/index.ts'),
+        prod: resolve(__dirname, '../dist'),
+      });
+    }
 
     // 注册Provider服务
     ctx.plugin(GlyphProvider, ctx.glyph);
